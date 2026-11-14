@@ -17,9 +17,12 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from week6 import router as week6_router
+from week7 import router as week7_router
+
 
 app = FastAPI(title="MCS4302 running system backend (Week 5)")
 app.include_router(week6_router)
+app.include_router(week7_router)
 
 class ItemIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
