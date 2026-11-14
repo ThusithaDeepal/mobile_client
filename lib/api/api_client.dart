@@ -18,6 +18,7 @@ class ApiClient {
   void close() {
     if (_ownsClient) _http.close();
   }
+
   final Duration timeout;
   final RetryPolicy retryPolicy;
 
@@ -25,7 +26,8 @@ class ApiClient {
     http.Client? client,
     this.timeout = const Duration(seconds: 2),
     this.retryPolicy = const RetryPolicy(),
-  }) : _ownsClient = client == null, _http = client ?? http.Client();
+  }) : _ownsClient = client == null,
+       _http = client ?? http.Client();
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$baseUrl$path').replace(queryParameters: query);
@@ -36,8 +38,10 @@ class ApiClient {
     try {
       res = await request().timeout(timeout);
     } on TimeoutException {
-      throw ApiException('Timed out after ${timeout.inMilliseconds} ms',
-          retryable: true);
+      throw ApiException(
+        'Timed out after ${timeout.inMilliseconds} ms',
+        retryable: true,
+      );
     } on SocketException catch (e) {
       throw ApiException('Network error: ${e.message}', retryable: true);
     } on http.ClientException catch (e) {
@@ -45,12 +49,17 @@ class ApiClient {
     }
 
     if (res.statusCode >= 500 && res.statusCode <= 599) {
-      throw ApiException('Server error',
-          statusCode: res.statusCode, retryable: true);
+      throw ApiException(
+        'Server error',
+        statusCode: res.statusCode,
+        retryable: true,
+      );
     }
     if (res.statusCode >= 400) {
-      throw ApiException('Client error: ${res.body}',
-          statusCode: res.statusCode);
+      throw ApiException(
+        'Client error: ${res.body}',
+        statusCode: res.statusCode,
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw ApiException('Unexpected HTTP status', statusCode: res.statusCode);
@@ -63,8 +72,10 @@ class ApiClient {
     try {
       return jsonDecode(res.body);
     } on FormatException {
-      throw ApiException('Malformed JSON from server',
-          statusCode: res.statusCode);
+      throw ApiException(
+        'Malformed JSON from server',
+        statusCode: res.statusCode,
+      );
     }
   }
 
@@ -86,16 +97,20 @@ class ApiClient {
   }
 
   void _checkItem(String name, double price) {
-    if (name.trim().isEmpty || name.trim().length > 120 ||
-        !price.isFinite || price < 0) {
-      throw ApiException('Enter a name (1-120 characters) and a nonnegative price');
+    if (name.trim().isEmpty ||
+        name.trim().length > 120 ||
+        !price.isFinite ||
+        price < 0) {
+      throw ApiException(
+        'Enter a name (1-120 characters) and a nonnegative price',
+      );
     }
   }
 
   Future<List<Item>> getItems() => withRetry(() async {
-        final res = await _send(() => _http.get(_uri('/items')));
-        return _items(res);
-      }, retryPolicy);
+    final res = await _send(() => _http.get(_uri('/items')));
+    return _items(res);
+  }, retryPolicy);
 
   /// POST is only safe to retry because every attempt carries the SAME key.
   Future<Item> createItem(
@@ -108,14 +123,16 @@ class ApiClient {
     // Generated once, OUTSIDE the retry loop.
     final key = useIdempotencyKey ? newIdempotencyKey() : null;
     return withRetry(() async {
-      final res = await _send(() => _http.post(
-            _uri('/items', failRate > 0 ? {'fail_rate': '$failRate'} : null),
-            headers: {
-              'Content-Type': 'application/json',
-              if (key != null) 'Idempotency-Key': key,
-            },
-            body: jsonEncode({'name': name, 'price': price}),
-          ));
+      final res = await _send(
+        () => _http.post(
+          _uri('/items', failRate > 0 ? {'fail_rate': '$failRate'} : null),
+          headers: {
+            'Content-Type': 'application/json',
+            if (key != null) 'Idempotency-Key': key,
+          },
+          body: jsonEncode({'name': name, 'price': price}),
+        ),
+      );
       return _itemValue(_decode(res));
     }, retryPolicy);
   }
@@ -129,11 +146,17 @@ class ApiClient {
     double failRate, {
     RetryPolicy? policy,
     void Function()? onAttempt,
-  }) =>
-      withRetry(() async {
-        _decode(await _send(
-            () => _http.get(_uri('/flaky', {'fail_rate': '$failRate'}))));
-      }, policy ?? retryPolicy, onAttempt: onAttempt);
+  }) => withRetry(
+    () async {
+      _decode(
+        await _send(
+          () => _http.get(_uri('/flaky', {'fail_rate': '$failRate'})),
+        ),
+      );
+    },
+    policy ?? retryPolicy,
+    onAttempt: onAttempt,
+  );
 
   Future<void> getBadJson() async {
     _decode(await _send(() => _http.get(_uri('/bad-json'))));
@@ -155,27 +178,30 @@ class ApiClient {
     required String event,
     double requestedDelaySeconds = 0,
     String detail = '',
-  }) =>
-      withRetry(() async {
-        await _send(() => _http.post(
-              _uri('/job-log'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'job_id': jobId,
-                'label': label,
-                'event': event,
-                'requested_delay_s': requestedDelaySeconds,
-                'detail': detail,
-              }),
-            ));
-      }, retryPolicy);
+  }) => withRetry(() async {
+    await _send(
+      () => _http.post(
+        _uri('/job-log'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'job_id': jobId,
+          'label': label,
+          'event': event,
+          'requested_delay_s': requestedDelaySeconds,
+          'detail': detail,
+        }),
+      ),
+    );
+  }, retryPolicy);
 
   /// One row per job: scheduled_at, ran_at, total_s, extra_delay_s, ...
   Future<List<Map<String, dynamic>>> getJobSummary() => withRetry(() async {
-        final data = _decode(await _send(() => _http.get(_uri('/job-log/summary'))));
-        if (data is! List) throw ApiException('Expected a list of jobs');
-        return data.whereType<Map<String, dynamic>>().toList();
-      }, retryPolicy);
+    final data = _decode(
+      await _send(() => _http.get(_uri('/job-log/summary'))),
+    );
+    if (data is! List) throw ApiException('Expected a list of jobs');
+    return data.whereType<Map<String, dynamic>>().toList();
+  }, retryPolicy);
 
   Future<void> clearJobLog() async {
     await _send(() => _http.delete(_uri('/job-log')));
